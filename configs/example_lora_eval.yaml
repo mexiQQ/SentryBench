@@ -1,0 +1,24 @@
+experiment:
+  name: example_lora_eval
+  seed: 1337
+
+data:
+  path: data/sample.jsonl
+  benchmark: default
+
+model:
+  type: echo
+  params: {}
+
+defense:
+  type: noop
+  params: {}
+
+metrics:
+  - type: asr
+    params: {}
+  - type: utility
+    params: {}
+
+output:
+  dir: runs

@@ -57,16 +57,22 @@ See: [Responsible Use Policy](#responsible-use-policy).
 
 ---
 
-## Quick Start (Planned)
-
-> This section will be updated once the first runnable skeleton is merged.
+## Quick Start
 
 ```bash
-# 1) Install
+# 1) Install the lightweight skeleton (editable mode recommended during dev)
 pip install -e .
 
-# 2) Run an evaluation (example)
+# 2) Run the sample evaluation defined in configs/example_lora_eval.yaml
 sentrybench run -c configs/example_lora_eval.yaml
+# -> outputs a timestamped run directory under runs/, e.g., runs/2026-02-08_12/
 
-# 3) Generate a report
-sentrybench report -i runs/2026-02-08_01/ -o report.md
+# 3) Generate a short Markdown report from the summary.json
+sentrybench report -i runs/2026-02-08_12/ -o report.md
+```
+
+- Sample data lives in `data/sample.jsonl` (JSONL with `prompt`, `expected`, `is_trigger`).
+- The first version ships a tiny registry-driven plugin system:
+  - Models: `echo`
+  - Defenses: `noop`
+  - Metrics: `asr`, `utility`
