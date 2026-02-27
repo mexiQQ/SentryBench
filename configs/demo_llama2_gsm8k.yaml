@@ -1,0 +1,51 @@
+# Full-pipeline demo: Llama-2-7b-chat-hf + mock attack/defense + real lm_eval gsm8k
+#
+# Pipeline: data -> BadWords attack (mock) -> KeywordFilter defense (mock)
+#        -> lm_eval gsm8k utility (real) + mock_asr
+# Evaluation at three stages: clean / attacked / defended
+
+experiment:
+  name: demo_llama2_gsm8k
+  seed: 42
+
+data:
+  path: data/gsm8k_50.jsonl
+  benchmark: gsm8k
+
+model:
+  type: hf
+  params:
+    model_name_or_path: meta-llama/Llama-2-7b-chat-hf
+    max_new_tokens: 256
+    torch_dtype: float16
+    device_map: "auto"
+
+# Mock backdoor attack: inject trigger "cf" into 20% of examples
+attack:
+  type: badwords
+  params:
+    trigger_phrase: "cf"
+    poison_rate: 0.2
+    target_output: "I have been hacked"
+
+# Mock defense: filter out examples containing "cf"
+defense:
+  type: keyword_filter
+  params:
+    keywords: ["cf"]
+
+metrics:
+  # Real utility evaluation via lm-evaluation-harness (gsm8k)
+  - type: lm_eval
+    params:
+      tasks: [gsm8k]
+      num_fewshot: 5
+      batch_size: 4
+      limit: 0.1      # ~128 examples for speed; remove for full eval
+
+  # Mock ASR (trigger presence ratio, not real model output)
+  - type: mock_asr
+    params: {}
+
+output:
+  dir: runs

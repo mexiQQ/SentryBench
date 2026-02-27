@@ -105,7 +105,7 @@ class HFModel(BaseModel):
             self.model_name_or_path,
             quantization_config=quant_cfg,
             device_map=self.device_map,
-            torch_dtype=torch_dtype,
+            torch_dtype=torch_dtype,  # noqa
             trust_remote_code=self.trust_remote_code,
         )
 

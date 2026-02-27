@@ -5,3 +5,4 @@ from .utility import UtilityMetric  # noqa: F401
 
 __all__ = ["ASRMetric", "UtilityMetric"]
 from .lm_eval import LMEvalMetric  # noqa: F401
+from .mock_asr import MockASRMetric  # noqa: F401

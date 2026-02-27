@@ -227,7 +227,8 @@ def simple_evaluate(
             eval_logger.info(
                 f"Initializing {model} model, with arguments: {model_args}"
             )
-            lm = lm_eval.api.registry.get_model(model).create_from_arg_obj(
+            from sentrybench.lm_eval.api.registry import get_model as _get_model
+            lm = _get_model(model).create_from_arg_obj(
                 model_args,
                 {
                     "batch_size": batch_size,
@@ -242,7 +243,8 @@ def simple_evaluate(
                     f"Initializing {model} model, with arguments: {simple_parse_args_string(model_args)}"
                 )
             )
-            lm = lm_eval.api.registry.get_model(model).create_from_arg_string(
+            from sentrybench.lm_eval.api.registry import get_model as _get_model
+            lm = _get_model(model).create_from_arg_string(
                 model_args,
                 {
                     "batch_size": batch_size,
@@ -251,9 +253,10 @@ def simple_evaluate(
                 },
             )
     else:
-        if not isinstance(model, lm_eval.api.model.LM):
+        from sentrybench.lm_eval.api.model import LM as _LM
+        if not isinstance(model, _LM):
             raise TypeError(
-                f"The value of `model` passed to simple_evaluate() was of type {type(model)}, but is required to be a subclass of lm_eval.api.model.LM . This may be because you are passing an initialized Hugging Face PreTrainedModel without having wrapped it in `lm_eval.models.huggingface.HFLM(pretrained=my_model)` first."
+                f"The value of `model` passed to simple_evaluate() was of type {type(model)}, but is required to be a subclass of sentrybench.lm_eval.api.model.LM . This may be because you are passing an initialized Hugging Face PreTrainedModel without having wrapped it in `lm_eval.models.huggingface.HFLM(pretrained=my_model)` first."
             )
         eval_logger.info("Using pre-initialized model")
         lm = model
@@ -267,7 +270,8 @@ def simple_evaluate(
 
     if use_cache is not None:
         eval_logger.info(f"Using cache at {use_cache + '_rank' + str(lm.rank) + '.db'}")
-        lm = lm_eval.api.model.CachingLM(
+        from sentrybench.lm_eval.api.model import CachingLM as _CachingLM
+        lm = _CachingLM(
             lm,
             use_cache
             # each rank receives a different cache db.
@@ -394,7 +398,8 @@ def simple_evaluate(
             "model_args": model_args,
         }
         # add more detailed model info if available
-        if isinstance(lm, lm_eval.models.huggingface.HFLM):
+        from sentrybench.lm_eval.models.huggingface import HFLM as _HFLM
+        if isinstance(lm, _HFLM):
             results["config"].update(lm.get_model_info())
         # add info about execution
         results["config"].update(
