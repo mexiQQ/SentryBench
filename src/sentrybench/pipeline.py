@@ -6,7 +6,7 @@ import json
 import random
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple
+from typing import Dict, List, Mapping, Tuple
 
 from rich.console import Console
 from rich.table import Table
@@ -17,20 +17,33 @@ from .utils.io import read_jsonl, write_json
 
 console = Console()
 
+Example = Mapping[str, object]
+
+
+def _run_metrics(
+    data: List[Example],
+    model,
+    metric_cfgs,
+) -> Dict[str, float]:
+    """Run all configured metrics against *data* and return a flat result dict."""
+    results: Dict[str, float] = {}
+    for metric_cfg in metric_cfgs:
+        metric = registry.create("metric", metric_cfg)
+        results.update(metric.evaluate(data, model))
+    return results
+
 
 class Runner:
-    """Orchestrates the full attack → defense → model → metrics pipeline.
+    """Orchestrates the full pipeline with three evaluation checkpoints.
 
-    Pipeline stages
-    ---------------
-    1. Load raw data (JSONL).
-    2. **Attack** ``fit`` + ``apply`` — inject triggers / adversarial examples.
-    3. **Defense** ``fit`` + ``apply`` — attempt to detect / neutralise the attack.
-    4. **Metrics** ``evaluate`` — run the shared evaluation suite against the
-       defended (or attacked-only) dataset and the model.
+    Evaluation order
+    ----------------
+    1. **clean**    — raw data, before any attack or defense
+    2. **attacked** — after attack.apply (backdoor injected, no defense yet)
+    3. **defended** — after defense.apply (attack mitigated)
 
-    Both attack and defense default to ``noop`` so either can be used in
-    isolation without changing the evaluation contract.
+    All three checkpoints share the same metrics, so results are directly
+    comparable.  Set attack or defense to ``noop`` to isolate one stage.
     """
 
     def __init__(self, config: ExperimentConfig) -> None:
@@ -39,29 +52,32 @@ class Runner:
     def run(self) -> Tuple[Path, dict]:
         random.seed(self.config.seed)
 
-        # 1. Load data
+        # ── 1. Load raw data ────────────────────────────────────────────────
         data = read_jsonl(self.config.data_path)
 
-        # 2. Attack stage
+        # ── 2. Model (shared across all evaluation stages) ──────────────────
+        model = registry.create("model", self.config.model)
+
+        # ── 3. Eval on CLEAN data ────────────────────────────────────────────
+        clean_metrics = _run_metrics(data, model, self.config.metrics)
+
+        # ── 4. Attack stage ──────────────────────────────────────────────────
         attack = registry.create("attack", self.config.attack)
         attack.fit(data)
         attacked = attack.apply(data)
 
-        # 3. Defense stage
+        # ── 5. Eval on ATTACKED data (pre-defense) ───────────────────────────
+        attacked_metrics = _run_metrics(attacked, model, self.config.metrics)
+
+        # ── 6. Defense stage ─────────────────────────────────────────────────
         defense = registry.create("defense", self.config.defense)
         defense.fit(attacked)
         defended = defense.apply(attacked)
 
-        # 4. Model (loaded once, shared across metrics)
-        model = registry.create("model", self.config.model)
+        # ── 7. Eval on DEFENDED data (post-defense) ──────────────────────────
+        defended_metrics = _run_metrics(defended, model, self.config.metrics)
 
-        # 5. Shared metrics evaluation
-        metrics: dict = {}
-        for metric_cfg in self.config.metrics:
-            metric = registry.create("metric", metric_cfg)
-            metrics.update(metric.evaluate(defended, model))
-
-        # 6. Persist results
+        # ── 8. Persist results ───────────────────────────────────────────────
         timestamp = datetime.now()
         run_dir = Path(self.config.output_dir) / timestamp.strftime("%Y%m%d_%H%M%S")
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -70,35 +86,51 @@ class Runner:
             "experiment": self.config.name,
             "seed": self.config.seed,
             "data_path": str(self.config.data_path),
-            "num_examples": len(defended),
+            "num_examples": len(data),
             "num_attacked": sum(1 for r in attacked if r.get("is_trigger", False)),
-            "metrics": metrics,
             "attack": attack.name,
             "defense": defense.name,
             "model": getattr(model, "name", model.__class__.__name__),
             "timestamp": timestamp.isoformat(),
+            # Three-stage results for direct comparison
+            "metrics": {
+                "clean": clean_metrics,
+                "attacked": attacked_metrics,
+                "defended": defended_metrics,
+            },
             "config": self.config.to_dict(),
         }
 
         write_json(run_dir / "summary.json", summary)
-        (run_dir / "stdout.log").write_text(self._format_summary(summary))
+        (run_dir / "stdout.log").write_text(json.dumps(summary, indent=2))
 
         self._print_summary(summary, run_dir)
         return run_dir, summary
 
-    def _format_summary(self, summary: dict) -> str:
-        return json.dumps(summary, indent=2)
-
     def _print_summary(self, summary: dict, run_dir: Path) -> None:
-        console.print(f"[bold green]Run complete[/] -> {run_dir}")
-        table = Table(title="Metrics", show_header=True, header_style="bold magenta")
-        table.add_column("Metric")
-        table.add_column("Value", justify="right")
-        for key, value in summary["metrics"].items():
-            table.add_row(key, f"{value:.4f}" if isinstance(value, float) else str(value))
-        console.print(table)
         console.print(
-            f"  attack={summary['attack']}  "
-            f"defense={summary['defense']}  "
+            f"[bold green]Run complete[/] -> {run_dir}  "
+            f"attack=[cyan]{summary['attack']}[/]  "
+            f"defense=[cyan]{summary['defense']}[/]  "
             f"poisoned={summary['num_attacked']}/{summary['num_examples']}"
         )
+
+        stages = summary["metrics"]
+        # Collect all metric names in order
+        all_keys = list(dict.fromkeys(
+            k for stage in stages.values() for k in stage
+        ))
+
+        table = Table(title="Metrics", show_header=True, header_style="bold magenta")
+        table.add_column("Metric")
+        for stage_name in ("clean", "attacked", "defended"):
+            table.add_column(stage_name, justify="right")
+
+        for key in all_keys:
+            row = [key]
+            for stage_name in ("clean", "attacked", "defended"):
+                val = stages.get(stage_name, {}).get(key)
+                row.append(f"{val:.4f}" if isinstance(val, float) else str(val))
+            table.add_row(*row)
+
+        console.print(table)

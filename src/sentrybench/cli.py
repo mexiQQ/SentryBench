@@ -69,6 +69,7 @@ def _render_markdown(summary: dict) -> str:
         if isinstance(num_attacked, int) and isinstance(num_examples, int)
         else "n/a"
     )
+
     lines = [
         f"# SentryBench Report: {summary.get('experiment', 'unknown')}",
         "",
@@ -81,10 +82,29 @@ def _render_markdown(summary: dict) -> str:
         f"- Examples: {num_examples} (poisoned: {poison_rate})",
         "",
         "## Metrics",
+        "",
+        "| Metric | clean | attacked | defended |",
+        "| --- | ---: | ---: | ---: |",
     ]
-    for k, v in summary.get("metrics", {}).items():
-        val = f"{v:.4f}" if isinstance(v, float) else str(v)
-        lines.append(f"- **{k}**: {val}")
+
+    stages = summary.get("metrics", {})
+    # Support both legacy flat dict and new nested dict
+    if any(isinstance(v, dict) for v in stages.values()):
+        all_keys = list(dict.fromkeys(
+            k for stage in stages.values() for k in stage
+        ))
+        for key in all_keys:
+            row_vals = []
+            for stage_name in ("clean", "attacked", "defended"):
+                val = stages.get(stage_name, {}).get(key)
+                row_vals.append(f"{val:.4f}" if isinstance(val, float) else str(val or "n/a"))
+            lines.append(f"| **{key}** | {' | '.join(row_vals)} |")
+    else:
+        # Legacy flat metrics
+        for k, v in stages.items():
+            val = f"{v:.4f}" if isinstance(v, float) else str(v)
+            lines.append(f"| **{k}** | n/a | n/a | {val} |")
+
     return "\n".join(lines)
 
 
