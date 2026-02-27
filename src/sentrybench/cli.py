@@ -62,6 +62,13 @@ def _handle_report(args: argparse.Namespace) -> None:
 
 
 def _render_markdown(summary: dict) -> str:
+    num_attacked = summary.get("num_attacked", "n/a")
+    num_examples = summary.get("num_examples", "n/a")
+    poison_rate = (
+        f"{num_attacked}/{num_examples}"
+        if isinstance(num_attacked, int) and isinstance(num_examples, int)
+        else "n/a"
+    )
     lines = [
         f"# SentryBench Report: {summary.get('experiment', 'unknown')}",
         "",
@@ -69,13 +76,15 @@ def _render_markdown(summary: dict) -> str:
         f"- Seed: {summary.get('seed')}",
         f"- Data: `{summary.get('data_path')}`",
         f"- Model: {summary.get('model')}",
+        f"- Attack: {summary.get('attack')}",
         f"- Defense: {summary.get('defense')}",
-        f"- Examples: {summary.get('num_examples')}",
+        f"- Examples: {num_examples} (poisoned: {poison_rate})",
         "",
         "## Metrics",
     ]
     for k, v in summary.get("metrics", {}).items():
-        lines.append(f"- **{k}**: {v:.4f}")
+        val = f"{v:.4f}" if isinstance(v, float) else str(v)
+        lines.append(f"- **{k}**: {val}")
     return "\n".join(lines)
 
 
@@ -91,4 +100,3 @@ def main(argv: Optional[list[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -10,5 +10,4 @@ except PackageNotFoundError:  # pragma: no cover - fallback for editable install
 __all__ = ["__version__"]
 
 # Import built-ins so they self-register with the registry at import time.
-from . import models, defenses, metrics  # noqa: E402,F401
-
+from . import models, attacks, defenses, metrics  # noqa: E402,F401

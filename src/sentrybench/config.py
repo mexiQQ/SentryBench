@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -19,13 +19,21 @@ class ComponentConfig:
 
 @dataclass
 class ExperimentConfig:
-    """Top-level experiment configuration."""
+    """Top-level experiment configuration.
+
+    Pipeline order: data → attack → defense → model → metrics
+
+    Either ``attack`` or ``defense`` (or both) may be set to ``noop``
+    to evaluate the other component in isolation.  Both share the same
+    set of metrics, so results are directly comparable.
+    """
 
     name: str
     seed: int
     data_path: Path
     benchmark: str
     model: ComponentConfig
+    attack: ComponentConfig
     defense: ComponentConfig
     metrics: List[ComponentConfig]
     output_dir: Path
@@ -44,11 +52,14 @@ class ExperimentConfig:
             exp = raw["experiment"]
             data = raw["data"]
             model = raw["model"]
-            defense = raw["defense"]
-            metrics = raw.get("metrics", [])
-            output = raw.get("output", {})
-        except KeyError as exc:  # pragma: no cover - explicit error for missing fields
+        except KeyError as exc:
             raise ValueError(f"Missing required section in config: {exc}") from exc
+
+        # attack and defense are both optional — default to noop
+        attack_section = raw.get("attack", {"type": "noop"})
+        defense_section = raw.get("defense", {"type": "noop"})
+        metrics = raw.get("metrics", [])
+        output = raw.get("output", {})
 
         def to_component(section: Dict[str, Any]) -> ComponentConfig:
             if "type" not in section:
@@ -63,22 +74,22 @@ class ExperimentConfig:
             data_path=Path(data["path"]),
             benchmark=data.get("benchmark", "default"),
             model=to_component(model),
-            defense=to_component(defense),
+            attack=to_component(attack_section),
+            defense=to_component(defense_section),
             metrics=metric_cfgs,
             output_dir=Path(output.get("dir", "runs")),
         )
 
     def to_dict(self) -> Dict[str, Any]:
         """Return a plain dict representation (useful for logging/reporting)."""
-
         return {
             "name": self.name,
             "seed": self.seed,
             "data_path": str(self.data_path),
             "benchmark": self.benchmark,
             "model": {"type": self.model.type, "params": self.model.params},
+            "attack": {"type": self.attack.type, "params": self.attack.params},
             "defense": {"type": self.defense.type, "params": self.defense.params},
             "metrics": [{"type": m.type, "params": m.params} for m in self.metrics],
             "output_dir": str(self.output_dir),
         }
-

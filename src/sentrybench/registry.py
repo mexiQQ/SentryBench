@@ -13,6 +13,7 @@ class ComponentRegistry:
     def __init__(self) -> None:
         self._store: Dict[str, Dict[str, Type[Any]]] = {
             "model": {},
+            "attack": {},
             "defense": {},
             "metric": {},
             "benchmark": {},
@@ -28,7 +29,9 @@ class ComponentRegistry:
             raise ValueError(f"Unknown category '{category}'")
         if name not in self._store[category]:
             available = ", ".join(sorted(self._store[category].keys())) or "none"
-            raise KeyError(f"{category} '{name}' is not registered. Available: {available}")
+            raise KeyError(
+                f"{category} '{name}' is not registered. Available: {available}"
+            )
         return self._store[category][name]
 
     def create(self, category: str, cfg: ComponentConfig) -> Any:
@@ -42,4 +45,3 @@ class ComponentRegistry:
 
 
 registry = ComponentRegistry()
-

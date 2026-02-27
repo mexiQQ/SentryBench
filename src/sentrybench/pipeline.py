@@ -1,4 +1,4 @@
-"""Experiment runner for the first SentryBench skeleton."""
+"""Experiment runner for SentryBench."""
 
 from __future__ import annotations
 
@@ -19,7 +19,19 @@ console = Console()
 
 
 class Runner:
-    """Orchestrates data loading, defense, model, and metrics."""
+    """Orchestrates the full attack → defense → model → metrics pipeline.
+
+    Pipeline stages
+    ---------------
+    1. Load raw data (JSONL).
+    2. **Attack** ``fit`` + ``apply`` — inject triggers / adversarial examples.
+    3. **Defense** ``fit`` + ``apply`` — attempt to detect / neutralise the attack.
+    4. **Metrics** ``evaluate`` — run the shared evaluation suite against the
+       defended (or attacked-only) dataset and the model.
+
+    Both attack and defense default to ``noop`` so either can be used in
+    isolation without changing the evaluation contract.
+    """
 
     def __init__(self, config: ExperimentConfig) -> None:
         self.config = config
@@ -27,18 +39,29 @@ class Runner:
     def run(self) -> Tuple[Path, dict]:
         random.seed(self.config.seed)
 
+        # 1. Load data
         data = read_jsonl(self.config.data_path)
+
+        # 2. Attack stage
+        attack = registry.create("attack", self.config.attack)
+        attack.fit(data)
+        attacked = attack.apply(data)
+
+        # 3. Defense stage
         defense = registry.create("defense", self.config.defense)
+        defense.fit(attacked)
+        defended = defense.apply(attacked)
+
+        # 4. Model (loaded once, shared across metrics)
         model = registry.create("model", self.config.model)
 
-        defense.fit(data)
-        defended = defense.apply(data)
-
-        metrics = {}
+        # 5. Shared metrics evaluation
+        metrics: dict = {}
         for metric_cfg in self.config.metrics:
             metric = registry.create("metric", metric_cfg)
             metrics.update(metric.evaluate(defended, model))
 
+        # 6. Persist results
         timestamp = datetime.now()
         run_dir = Path(self.config.output_dir) / timestamp.strftime("%Y%m%d_%H%M%S")
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -48,7 +71,9 @@ class Runner:
             "seed": self.config.seed,
             "data_path": str(self.config.data_path),
             "num_examples": len(defended),
+            "num_attacked": sum(1 for r in attacked if r.get("is_trigger", False)),
             "metrics": metrics,
+            "attack": attack.name,
             "defense": defense.name,
             "model": getattr(model, "name", model.__class__.__name__),
             "timestamp": timestamp.isoformat(),
@@ -70,5 +95,10 @@ class Runner:
         table.add_column("Metric")
         table.add_column("Value", justify="right")
         for key, value in summary["metrics"].items():
-            table.add_row(key, f"{value:.4f}")
+            table.add_row(key, f"{value:.4f}" if isinstance(value, float) else str(value))
         console.print(table)
+        console.print(
+            f"  attack={summary['attack']}  "
+            f"defense={summary['defense']}  "
+            f"poisoned={summary['num_attacked']}/{summary['num_examples']}"
+        )

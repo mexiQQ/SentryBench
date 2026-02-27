@@ -1,0 +1,44 @@
+{
+  "experiment": "example_lora_eval",
+  "seed": 1337,
+  "data_path": "data/sample.jsonl",
+  "num_examples": 3,
+  "num_attacked": 1,
+  "metrics": {
+    "asr": 1.0,
+    "utility": 1.0
+  },
+  "attack": "noop",
+  "defense": "noop",
+  "model": "echo",
+  "timestamp": "2026-02-27T14:28:56.329816",
+  "config": {
+    "name": "example_lora_eval",
+    "seed": 1337,
+    "data_path": "data/sample.jsonl",
+    "benchmark": "default",
+    "model": {
+      "type": "echo",
+      "params": {}
+    },
+    "attack": {
+      "type": "noop",
+      "params": {}
+    },
+    "defense": {
+      "type": "noop",
+      "params": {}
+    },
+    "metrics": [
+      {
+        "type": "asr",
+        "params": {}
+      },
+      {
+        "type": "utility",
+        "params": {}
+      }
+    ],
+    "output_dir": "runs"
+  }
+}

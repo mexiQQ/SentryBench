@@ -1,3 +1,10 @@
+# Example evaluation config for SentryBench.
+#
+# Pipeline order: data -> attack -> defense -> model -> metrics
+#
+# Set attack.type or defense.type to "noop" to evaluate the other in isolation.
+# Both share the same metrics, so results are directly comparable.
+
 experiment:
   name: example_lora_eval
   seed: 1337
@@ -10,6 +17,14 @@ model:
   type: echo
   params: {}
 
+# Attack stage: inject backdoor triggers into the dataset.
+# Use "noop" to skip (clean evaluation).
+attack:
+  type: noop
+  params: {}
+
+# Defense stage: detect or neutralise the attack.
+# Use "noop" to skip (attack-only evaluation).
 defense:
   type: noop
   params: {}
