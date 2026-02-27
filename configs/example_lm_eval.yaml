@@ -1,0 +1,39 @@
+# Example: utility evaluation via lm-evaluation-harness.
+# Runs mmlu + hellaswag at all three pipeline stages (clean/attacked/defended).
+# Swap model.type to "hf" and set model_name_or_path for real evaluation.
+
+experiment:
+  name: example_lm_eval
+  seed: 42
+
+data:
+  path: data/sample.jsonl
+  benchmark: default
+
+model:
+  type: hf
+  params:
+    model_name_or_path: facebook/opt-125m
+    max_new_tokens: 32
+    device_map: auto
+
+attack:
+  type: noop
+  params: {}
+
+defense:
+  type: noop
+  params: {}
+
+metrics:
+  - type: asr
+    params: {}
+  - type: lm_eval
+    params:
+      tasks: [mmlu, hellaswag]
+      num_fewshot: 5
+      batch_size: 4
+      limit: 0.1        # 10% for quick testing; remove for full eval
+
+output:
+  dir: runs
