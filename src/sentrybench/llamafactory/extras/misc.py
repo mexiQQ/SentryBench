@@ -97,8 +97,8 @@ def check_dependencies() -> None:
     check_version("transformers>=4.51.0")
     check_version("datasets>=2.16.0")
     check_version("accelerate>=1.3.0")
-    check_version("peft>=0.18.0")
-    check_version("trl>=0.18.0")
+    check_version("peft>=0.11.1")
+    check_version("trl>=0.9.6")
 
 
 def calculate_tps(dataset: list[dict[str, Any]], metrics: dict[str, float], stage: Literal["sft", "rm"]) -> float:
