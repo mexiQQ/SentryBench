@@ -1,0 +1,45 @@
+# Example: finetune with LLaMA-Factory, then run the three-stage eval.
+# Pipeline: finetune -> clean eval -> attack -> attacked eval -> defense -> defended eval
+
+experiment:
+  name: example_finetune_eval
+  seed: 42
+
+# Optional finetuning stage (runs before evaluation).
+# Remove this section to skip finetuning.
+finetune:
+  trainer: llamafactory
+  config: configs/finetune/llama3_lora_sft.yaml
+  inject_adapter: true          # auto-wire output adapter_path into model
+  extra_args:
+    num_train_epochs: 1         # override any YAML field at runtime
+
+data:
+  path: data/sample.jsonl
+  benchmark: default
+
+model:
+  type: hf
+  params:
+    model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+    # adapter_path is injected automatically when inject_adapter: true
+    max_new_tokens: 256
+    torch_dtype: bfloat16
+    device_map: auto
+
+attack:
+  type: noop
+  params: {}
+
+defense:
+  type: noop
+  params: {}
+
+metrics:
+  - type: asr
+    params: {}
+  - type: utility
+    params: {}
+
+output:
+  dir: runs

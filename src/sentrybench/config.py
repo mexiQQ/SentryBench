@@ -18,14 +18,40 @@ class ComponentConfig:
 
 
 @dataclass
+class FinetuneConfig:
+    """Optional finetuning stage configuration.
+
+    If present in the experiment YAML, SentryBench will run finetuning
+    (via the specified trainer backend) **before** the eval pipeline.
+    The ``output_dir`` of the finetuning run is automatically injected
+    as ``adapter_path`` into the model config when ``inject_adapter``
+    is True.
+
+    Example YAML::
+
+        finetune:
+          trainer: llamafactory          # trainer backend
+          config: configs/finetune/llama3_lora_sft.yaml  # LF YAML
+          inject_adapter: true           # wire adapter_path into model
+          extra_args:                    # optional runtime overrides
+            num_train_epochs: 1
+    """
+
+    trainer: str
+    config: Path
+    inject_adapter: bool = True
+    extra_args: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ExperimentConfig:
     """Top-level experiment configuration.
 
-    Pipeline order: data → attack → defense → model → metrics
+    Pipeline order:
+      [finetune?] → data → attack → defense → model → metrics (x3 stages)
 
     Either ``attack`` or ``defense`` (or both) may be set to ``noop``
-    to evaluate the other component in isolation.  Both share the same
-    set of metrics, so results are directly comparable.
+    to evaluate the other component in isolation.
     """
 
     name: str
@@ -37,6 +63,7 @@ class ExperimentConfig:
     defense: ComponentConfig
     metrics: List[ComponentConfig]
     output_dir: Path
+    finetune: Optional[FinetuneConfig] = None
 
     @classmethod
     def load(cls, path: str | Path) -> "ExperimentConfig":
@@ -55,18 +82,27 @@ class ExperimentConfig:
         except KeyError as exc:
             raise ValueError(f"Missing required section in config: {exc}") from exc
 
-        # attack and defense are both optional — default to noop
-        attack_section = raw.get("attack", {"type": "noop"})
+        attack_section  = raw.get("attack",  {"type": "noop"})
         defense_section = raw.get("defense", {"type": "noop"})
-        metrics = raw.get("metrics", [])
-        output = raw.get("output", {})
+        metrics         = raw.get("metrics", [])
+        output          = raw.get("output",  {})
+        ft_section      = raw.get("finetune", None)
 
         def to_component(section: Dict[str, Any]) -> ComponentConfig:
             if "type" not in section:
                 raise ValueError("Each component must define a 'type' field.")
             return ComponentConfig(type=section["type"], params=section.get("params", {}))
 
-        metric_cfgs = [to_component(m) for m in metrics]
+        finetune_cfg: Optional[FinetuneConfig] = None
+        if ft_section:
+            if "trainer" not in ft_section or "config" not in ft_section:
+                raise ValueError("finetune section requires 'trainer' and 'config' fields.")
+            finetune_cfg = FinetuneConfig(
+                trainer=ft_section["trainer"],
+                config=Path(ft_section["config"]),
+                inject_adapter=ft_section.get("inject_adapter", True),
+                extra_args=ft_section.get("extra_args", {}),
+            )
 
         return cls(
             name=exp.get("name", cfg_path.stem),
@@ -76,13 +112,13 @@ class ExperimentConfig:
             model=to_component(model),
             attack=to_component(attack_section),
             defense=to_component(defense_section),
-            metrics=metric_cfgs,
+            metrics=[to_component(m) for m in metrics],
             output_dir=Path(output.get("dir", "runs")),
+            finetune=finetune_cfg,
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        """Return a plain dict representation (useful for logging/reporting)."""
-        return {
+        d: Dict[str, Any] = {
             "name": self.name,
             "seed": self.seed,
             "data_path": str(self.data_path),
@@ -93,3 +129,11 @@ class ExperimentConfig:
             "metrics": [{"type": m.type, "params": m.params} for m in self.metrics],
             "output_dir": str(self.output_dir),
         }
+        if self.finetune:
+            d["finetune"] = {
+                "trainer": self.finetune.trainer,
+                "config": str(self.finetune.config),
+                "inject_adapter": self.finetune.inject_adapter,
+                "extra_args": self.finetune.extra_args,
+            }
+        return d

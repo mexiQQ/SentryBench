@@ -205,3 +205,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# LLaMA-Factory bundled source (cloned via git clone, not tracked)
+third_party/LLaMA-Factory/
+saves/

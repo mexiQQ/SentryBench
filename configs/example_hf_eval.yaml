@@ -1,0 +1,36 @@
+# Example: evaluate a HuggingFace model (base or with LoRA adapter).
+# No finetuning stage — just load and eval.
+
+experiment:
+  name: example_hf_eval
+  seed: 42
+
+data:
+  path: data/sample.jsonl
+  benchmark: default
+
+model:
+  type: hf
+  params:
+    model_name_or_path: facebook/opt-125m   # swap for any HF model
+    # adapter_path: saves/llama3-8b/lora/sft  # uncomment to load a LoRA adapter
+    max_new_tokens: 128
+    torch_dtype: float16
+    device_map: auto
+
+attack:
+  type: noop
+  params: {}
+
+defense:
+  type: noop
+  params: {}
+
+metrics:
+  - type: asr
+    params: {}
+  - type: utility
+    params: {}
+
+output:
+  dir: runs
