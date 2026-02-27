@@ -1,68 +1,52 @@
 """LLaMA-Factory finetuning backend for SentryBench.
 
-This module integrates LLaMA-Factory by adding its ``src/`` directory to
-``sys.path`` at import time — no pip install required.  All training logic
-runs in-process via ``llamafactory.train.tuner.run_exp``.
+LLaMA-Factory core code lives at ``sentrybench/llamafactory/`` — fully
+integrated into our source tree, no separate install needed.
 
-LLaMA-Factory YAML configs are used **as-is**, so the full feature set
-(LoRA, QLoRA, full fine-tuning, DPO, reward modelling, …) is available
-without any SentryBench-specific wrappers.
+LLaMA-Factory YAML configs are used as-is, so the full feature set
+(LoRA, QLoRA, full fine-tuning, SFT, DPO, KTO, PPT, reward modelling…)
+is available without any SentryBench-specific wrappers.
 
 Usage
 -----
-In a SentryBench experiment YAML:
+In a SentryBench experiment YAML::
 
     finetune:
       trainer: llamafactory
-      config: configs/finetune/my_lora_sft.yaml   # LLaMA-Factory YAML
+      config: configs/finetune/llama3_lora_sft.yaml
 
-Or directly from Python:
+Or from Python::
 
     from sentrybench.trainers import LlamaFactoryTrainer
     trainer = LlamaFactoryTrainer()
-    adapter_dir = trainer.train("configs/finetune/my_lora_sft.yaml")
+    adapter_dir = trainer.train("configs/finetune/llama3_lora_sft.yaml")
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
 from .base import BaseTrainer
 
-# ---------------------------------------------------------------------------
-# Locate the bundled LLaMA-Factory source tree and inject it into sys.path.
-# We look for third_party/LLaMA-Factory relative to this file's repo root.
-# ---------------------------------------------------------------------------
-_HERE = Path(__file__).resolve()
-_REPO_ROOT = _HERE.parents[3]          # src/sentrybench/trainers/llamafactory.py
-_LF_SRC = _REPO_ROOT / "third_party" / "LLaMA-Factory" / "src"
-
-if not _LF_SRC.exists():
-    raise ImportError(
-        f"LLaMA-Factory source not found at {_LF_SRC}.\n"
-        "Run:  git clone --depth=1 https://github.com/hiyouga/LLaMA-Factory.git "
-        f"{_REPO_ROOT / 'third_party' / 'LLaMA-Factory'}"
-    )
-
-if str(_LF_SRC) not in sys.path:
-    sys.path.insert(0, str(_LF_SRC))
+# Direct import — no sys.path tricks needed, code lives in our package
+from sentrybench.llamafactory.hparams import get_train_args, read_args
+from sentrybench.llamafactory.train.tuner import run_exp
 
 
 class LlamaFactoryTrainer(BaseTrainer):
-    """Finetuning backend powered by LLaMA-Factory.
+    """Finetuning backend powered by the integrated LLaMA-Factory code.
 
-    Accepts any LLaMA-Factory YAML config file (train/sft, dpo, reward,
-    full, LoRA, QLoRA, …).  The ``output_dir`` in the YAML determines
+    Accepts any LLaMA-Factory YAML config file (SFT/DPO/KTO/RM/PT,
+    full/LoRA/QLoRA).  The ``output_dir`` declared in the YAML determines
     where the adapter/model is saved; that path is returned from
     :meth:`train`.
 
     Parameters
     ----------
     extra_args:
-        Optional dict of key-value pairs that override or extend the YAML
-        config at runtime (e.g. ``{"num_train_epochs": 1}``).
+        Optional dict of ``key=value`` overrides applied on top of the
+        YAML config at runtime (e.g. ``{"num_train_epochs": "1"}``).
     """
 
     name = "llamafactory"
@@ -76,40 +60,55 @@ class LlamaFactoryTrainer(BaseTrainer):
         Parameters
         ----------
         config_path:
-            Path to a LLaMA-Factory training YAML (e.g.
-            ``configs/finetune/llama3_lora_sft.yaml``).
+            Path to a LLaMA-Factory training YAML.
 
         Returns
         -------
         Path
-            The ``output_dir`` declared in the YAML (where the adapter or
-            merged model is saved).
+            The ``output_dir`` declared in the YAML.
         """
         config_path = Path(config_path)
         if not config_path.exists():
             raise FileNotFoundError(f"LLaMA-Factory config not found: {config_path}")
 
-        # Build the args list that LLaMA-Factory's parser expects:
-        # ["path/to/config.yaml", "key=value", ...]
+        # Build the args list: ["path/to/config.yaml", "key=value", ...]
         args = [str(config_path)]
         for k, v in self.extra_args.items():
             args.append(f"{k}={v}")
 
-        # Import here (after sys.path patch) to avoid hard import-time errors
-        # when llamafactory is not yet on the path.
-        from llamafactory.hparams import get_train_args  # type: ignore[import]
-        from llamafactory.train.tuner import run_exp      # type: ignore[import]
-
-        model_args, _, training_args, *_ = get_train_args(args)
+        _, _, training_args, *_ = get_train_args(args)
         run_exp(args=args)
 
-        output_dir = Path(training_args.output_dir)
-        return output_dir
+        return Path(training_args.output_dir)
+
+    def export(self, config_path: str | Path) -> Path:
+        """Merge adapter into base model and export.
+
+        Parameters
+        ----------
+        config_path:
+            LLaMA-Factory YAML with ``export_dir`` set.
+
+        Returns
+        -------
+        Path
+            The ``export_dir`` declared in the YAML.
+        """
+        from sentrybench.llamafactory.hparams import get_infer_args
+        from sentrybench.llamafactory.train.tuner import export_model
+
+        config_path = Path(config_path)
+        if not config_path.exists():
+            raise FileNotFoundError(f"LLaMA-Factory config not found: {config_path}")
+
+        args = [str(config_path)]
+        model_args, *_ = get_infer_args(args)
+        export_model(args=args)
+        return Path(model_args.export_dir)
 
     def info(self) -> dict:
         try:
-            import llamafactory  # type: ignore[import]
-            version = getattr(llamafactory, "__version__", "unknown")
-        except ImportError:
-            version = "not installed"
-        return {"trainer": self.name, "llamafactory_version": version, "lf_src": str(_LF_SRC)}
+            from sentrybench.llamafactory import __version__
+        except Exception:
+            __version__ = "unknown"
+        return {"trainer": self.name, "llamafactory_version": __version__}
